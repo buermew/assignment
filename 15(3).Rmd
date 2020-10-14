@@ -1,0 +1,364 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Q1
+
+```{r,1}
+Xij <- scan(text= ## Data Taylor & Ashe (1983)
+"357848 0766940 0610542 0482940 527326 574398 146342 139950 227229 067948
+352118 0884021 0933894 1183289 445745 320996 527804 266172 425046
+290507 1001799 0926219 1016654 750816 146923 495992 280405
+310608 1108250 0776189 1562400 272482 352053 206286
+443160 0693190 0991983 0769488 504851 470639
+396132 0937085 0847498 0805037 705960
+440832 0847631 1131398 1063269
+359480 1061648 1443370
+376686 0986608
+344014")
+n <- length(Xij); TT <- 10
+i <- rep(1:TT, TT:1); j <- sequence(TT:1)
+i <- as.factor(i); j <- as.factor(j)
+Orig.CL <- glm(Xij~i+j, quasipoisson)
+coefs <- exp(coef(Orig.CL))
+alpha <- c(1, coefs[2:TT]) * coefs[1]
+beta <- c(1, coefs[(TT+1):(2*TT-1)])
+names(alpha) <- paste0("row",1:10); round(alpha)
+names(beta) <- paste0("col",1:10); round(beta, 4)
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+(tapply(Xij,i,sum) - tapply(fitted(Orig.CL),i,sum))/tapply(Xij,i,sum)
+(tapply(Xij,j,sum) - tapply(fitted(Orig.CL),j,sum))/tapply(Xij,j,sum)
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+```
+
+## Q2
+
+row(Orig.fits):Returns a matrix of integers indicating their row number in the Orig.fits
+
+col(Orig.fits):Returns a matrix of integers indicating their col number in the Orig.fits
+
+future: the logical matirx which True below the diagonal and FLASE above the diagonal
+```{r,2}
+Orig.fits <- alpha %o% beta; round(Orig.fits) ## display fitted values
+future <- row(Orig.fits) + col(Orig.fits) - 1 > TT
+Orig.reserve <- sum(Orig.fits[future]) ## 18680856
+print('------result------')
+row(Orig.fits)
+col(Orig.fits)
+future
+```
+
+##Q3:
+Here are 121 negative pseudo-observations appeared in total.
+```{r,3}
+Prs.resid <- (Xij - fitted(Orig.CL)) / sqrt(fitted(Orig.CL))
+p <- 2*TT-1; phi.P <- sum(Prs.resid^2)/(n-p)
+Adj.Prs.resid <- Prs.resid * sqrt(n/(n-p))
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+set.seed(1) ## fill in your favorite 6-digit number
+#-----------------------------------------------------------------------
+#-----------------------------------------------------------------------
+nBoot <- 1000; payments <- reserves <- n.neg <- numeric(nBoot)
+number = 0
+for (boots in 1:nBoot){
+  Ps.Xij <- sample(Adj.Prs.resid, n, replace=TRUE) ## 1
+  Ps.Xij <- Ps.Xij * sqrt(fitted(Orig.CL)) + fitted(Orig.CL) ## 2
+  number.neg <- sum(Ps.Xij<0)
+  for(a in Ps.Xij){if (a<0){number = number+1}}
+  Ps.Xij <- pmax(Ps.Xij, 0) ## Set obs < 0 to 0
+  Ps.CL <- glm(Ps.Xij~i+j, family=quasipoisson) ## 5
+  coefs <- exp(as.numeric(coef(Ps.CL)))
+  Ps.alpha <- c(1, coefs[2:TT]) * coefs[1]
+  Ps.beta <- c(1, coefs[(TT+1):(2*TT-1)])
+  Ps.fits <- Ps.alpha %o% Ps.beta
+  Ps.reserve <- sum(Ps.fits[future])
+  h <- length(Ps.fits[future]) ## 11
+  Ps.payments <- phi.P * rpois(h, Ps.fits[future]/phi.P)
+  Ps.totpayment <- sum(Ps.payments)
+  reserves[boots] <- Ps.reserve ## 14
+  payments[boots] <- Ps.totpayment
+  n.neg[boots] <- number.neg
+}
+number
+```
+
+##Q4
+```{r,4}
+PE.bs <- sqrt(phi.P*Orig.reserve + var(reserves)) ## ~ 3 million
+var(reserves) / (phi.P*Orig.reserve) ## ~ 8
+payments <- payments/1e6
+mean(payments) ## sample mean: ~ 19
+sd(payments) ## sample s.d.: ~ 3
+pp <- payments-mean(payments)
+mean(pp^3)/sd(payments)^3 ## sample skewness: ~ 0.4, varies a lot
+mean(pp^4)/mean(pp^2)^2 - 3 ## sample kurtosis: ~ 0.4, varies a lot
+hist(payments, breaks=21, prob=T)
+lines(density(payments), col="blue")
+curve(dnorm(x, mean(payments), sd(payments)), add=T, col="red")
+quantile(payments, c(0.5,0.75,0.9,0.95,0.99))
+```
+
+##Q5:
+
+```{r,5}
+#(a)
+Orig.gam <- glm(Xij~i+j, fam=Gamma(link=log))
+#(b)
+coefs <- exp(coef(Orig.gam))
+alpha = c(1, coefs[2:TT]) * coefs[1]
+beta <- c(1, coefs[(TT+1):(2*TT-1)])
+names(alpha) <- paste0("row",1:10); round(alpha)
+names(beta) <- paste0("col",1:10); round(beta, 4)
+Orig.fits <- alpha %o% beta; round(Orig.fits) ## display fitted values
+future <- row(Orig.fits) + col(Orig.fits) - 1 > TT
+Orig.reserve <- sum(Orig.fits[future]) #18085805
+Orig.reserve
+#(c)+(d)
+Prs.resid <- (Xij - fitted(Orig.CL)) / sqrt(fitted(Orig.CL))
+p <- 2*TT-1; phi.P <- sum(Prs.resid^2)/(n-p)
+Adj.Prs.resid <- Prs.resid * sqrt(n/(n-p))
+set.seed(1) ## fill in your favorite 6-digit number
+nBoot <- 10; payments.gam <- reserves.gam <- n.neg <- numeric(nBoot)
+for (boots in 1:nBoot){
+  Ps.Xij <- sample(Adj.Prs.resid, n, replace=TRUE) ## 1
+  Ps.Xij <- Ps.Xij * sqrt(fitted(Orig.gam))+ fitted(Orig.gam) ## 2
+  number.neg <- sum(Ps.Xij<0)
+  Ps.Xij <- pmax(Ps.Xij, 0.1) ## Set obs < 0 to 0
+  print(Ps.Xij)
+  Ps.CL <- glm(Ps.Xij~i+j, family=Gamma(link=log)) ## 5
+  coefs <- exp(as.numeric(coef(Ps.CL)))
+  Ps.alpha <- c(1, coefs[2:TT]) * coefs[1]
+  Ps.beta <- c(1, coefs[(TT+1):(2*TT-1)])
+  Ps.fits <- Ps.alpha %o% Ps.beta
+  Ps.reserve <- sum(Ps.fits[future])
+  h <- length(Ps.fits[future]) ## 11
+  Ps.payments <- phi.P * rpois(h, Ps.fits[future]/phi.P)
+  Ps.totpayment <- sum(Ps.payments)
+  reserves.gam[boots] <- Ps.reserve ## 14
+  payments.gam[boots] <- Ps.totpayment
+  n.neg[boots] <- number.neg
+}
+#(e)
+PE.bs <- sqrt(phi.P*Orig.reserve + var(reserves.gam)) ## ~ 3 million
+var(reserves.gam) / (phi.P*Orig.reserve) ## ~ 8
+payments.gam <- payments.gam/1e6
+mean(payments.gam) ## sample mean: ~ 19
+sd(payments.gam) ## sample s.d.: ~ 3
+pp <- payments.gam-mean(payments.gam)
+mean(pp^3)/sd(payments.gam)^3 ## sample skewness: ~ 0.4, varies a lot
+mean(pp^4)/mean(pp^2)^2 - 3 ## sample kurtosis: ~ 0.4, varies a lot
+quantile(payments.gam, c(0.5,0.75,0.9,0.95,0.99))
+```
+
+## Q6
+
+From the result, the parameters alpha and beta extracted from Orig.gam satisfy the DM equations. 
+
+```{r,6,warning=FALSE}
+alpha
+beta
+w = coefs
+for (iter in 1:10){
+  alpha <- sqrt(tapply(w*Xij/beta[j],i,sum)/
+  tapply(w*beta[j],i,sum))
+  beta <- sqrt(tapply(w*Xij/alpha[i],j,sum)/
+  tapply(w*alpha[i],j,sum))}
+alpha
+beta
+```
+
+## Q7
+
+(a)
+
+the output look as my expect, the output o those are the same in the first item, and add zeros for future years in Xij.
+
+(b)
+
+We can see that the coef and deviance are the same in these two model CL and Orig.CL
+```{r,7}
+Xij.1 <- as.vector(t(xtabs(Xij~i+j))) ## stored row-wise as usual
+ii <- rep(1:TT, each=TT); jj <- rep(1:TT, TT); future <- ii+jj-1 > TT
+ii <- as.factor(ii); jj <- as.factor(jj)
+CL <- glm(Xij.1~ii+jj, fam=quasipoisson, wei=as.numeric(!future))
+Xij[i==TT]
+Xij.1[ii==TT]
+coef(CL)
+coef(Orig.CL)
+CL$deviance
+Orig.CL$deviance
+```
+
+##Q8£º
+
+line 1 is equivalent to the mean deviance estimate 
+
+line 2 is equivalent to the Pearson estimate
+
+```{r,8}
+n <- sum(Xij.1>0) ## number of observations
+p <- 2*TT-1 ## number of estimated parameters
+phi <- CL$deviance/CL$df.residual; phi ## 1
+1/(n-p)*sum((!future)*(Xij.1 - fitted(CL))^2/fitted(CL)) ## 2
+sum(resid(CL,type="devi")^2)/(n-p) ## 3
+sum(resid(CL,type="pear")^2)/(n-p) ## 4
+2/(n-p)*sum((Xij.1*log(Xij.1/fitted(CL)) - (Xij.1-fitted(CL)))[!future]) ## 5
+summary(CL)$dispersion ## 6
+Cov.beta <- vcov(CL)
+X <- model.matrix(CL)
+Cov.eta <- X %*% Cov.beta %*% t(X)
+mu.hat <- fitted(CL)*future ## predictions for future cells
+MSE <- phi * sum(mu.hat) + t(mu.hat) %*% Cov.eta %*% mu.hat ## equation (1)
+sqrt(MSE) ## 2946484 = Root MSE = prediction error
+sum(mu.hat)
+```
+
+##Q9:
+
+{r,9}
+mu.hat
+for (r in 2:TT){
+mu.r <- mu.hat ## replace the elements of mu.hat not having rownr==r by 0
+res <- .... ## reserve estimate for year of origin r
+MSE <- .... ## MSE for year of origin r, see above
+cat("Year =", r, "\t reserve =", round(res), "\t pred.error/reserve =",
+round(100*sqrt(MSE)/res), "%\n")
+}
+
+
+##Q10:
+
+The scaled deviance of exposure model is 7.1 compared with scaled deviance of chain ladder model is 8.83, and in the freedom , there has no difference, so chain ladder model comes out best
+```{r,10}
+rm(list=ls())
+Xij <- scan(text="
+156 37 6 5 3 2 1 0
+154 42 8 5 6 3 0
+178 63 14 5 3 1
+198 56 13 11 2
+206 49 9 5
+250 85 28
+252 44
+221")
+TT <- 8; i <- rep(1:TT, TT:1); j <- sequence(TT:1)
+fi <- as.factor(i); fj <- as.factor(j)
+ee <- c(28950,29754,22315,39442,38423,50268,44762,43541)
+Expo <- ee[i]
+CL <- glm(Xij~fi+fj, quasipoisson) ## chain ladder model
+EE <- glm(Xij~offset(log(Expo))+fj, quasipoisson) ## exposure model
+phi <- CL$deviance / CL$df.residual ## mean-deviance estimate for phi
+Delta.Dev.Sc <- 2*log(CL$deviance) ## difference of scaled deviances for CL and EE
+Delta.df <- CL$df.null-EE$df.null  ## difference of degrees of freedom for CL and EE
+reject <- ifelse(Delta.Dev.Sc>phi**2, TRUE, FALSE) ## TRUE if Delta.Dev.Sc > the chi^2 critical value
+cat("The exposure model", ifelse(reject, "is", "is not"), "rejected",
+"since the scaled deviance gained by CL is\n",
+round(Delta.Dev.Sc,1), "with", Delta.df, "extra parameters.\n") 
+2*log(EE$deviance)
+```
+
+## Q11
+
+```{r,11}
+xtabs(round(100*(fitted(CL) - fitted(EE))/fitted(CL))~i+j)
+round(coef(CL),2); round(coef(EE),2)
+CL.off <- glm(Xij~offset(log(Expo))+fj+fi, quasipoisson)
+summary(CL.off)
+exp(coef(CL))
+exp(coef(CL.off))
+summary(CL.off)
+```
+
+##Q12:
+
+(a)
+
+The adjusted exposure model yields significant improvement over the ordinary exposure model, since there is some change in the deviance.
+
+(b)
+
+chain ladder model do not yields significant improvement over the adjusted exposure model, since there is little change (0.85293<1) in the deviance.
+
+(c)
+From the result (a) and (b), the best model is EE.adj
+
+```{r,12}
+i.is.3 <- as.numeric(i==3)
+EE.adj <- glm(Xij~offset(log(Expo))+i.is.3+fj, quasipoisson)
+anova(EE, EE.adj)
+anova(EE.adj, CL)
+
+```
+
+
+##Q13:
+
+Similar to the above analysis, we can get similar results.Compared with the result of Q12, The Deviance of ANOVA (EE1, EE1.adj) reduced from 47.874 to 2.9203, which also shows that EE.adj has a less prominent advantage, but it is still the best model
+```{r,13}
+ee1 <- c(28950,29754,32315,39442,38423,50268,44762,43541)
+Expo1 <- ee1[i]
+CL1 <- glm(Xij~fi+fj, quasipoisson) ## chain ladder model
+EE1 <- glm(Xij~offset(log(Expo1))+fj, quasipoisson) ## exposure model
+EE1.adj <- glm(Xij~offset(log(Expo1))+i.is.3+fj, quasipoisson)
+anova(EE1, EE1.adj)
+anova(EE1.adj, CL1)
+```
+
+##Q14:
+
+```{r,14}
+rm(list=ls()) ## clear workspace
+Xij <- scan(text="
+156 37 6 5 3 2 1 0
+154 42 8 5 6 3 0
+178 63 14 5 3 1
+198 56 13 11 2
+206 49 9 5
+250 85 28
+252 44
+221")
+TT <- 8; i <- rep(1:TT, TT:1); j <- sequence(TT:1)
+fi <- as.factor(i); fj <- as.factor(j)
+ee <- c(28950,29754,31141,32443,34700,36268,37032,36637)
+Expo <- ee[i]
+CL <- glm(Xij~fi+fj, quasipoisson)
+cc <- exp(coef(CL))
+alpha <- cc[1]*c(1,cc[2:TT]); beta <- c(1,cc[(TT+1):(2*TT-1)])
+alpha <- alpha*sum(beta); beta <- beta/sum(beta)
+M <- ee * alpha[1] / ee[1]
+```
+
+## Q15:
+
+From the result, CL.retro is equal to sum(Xij), but BF.retro is not
+
+Reason:
+
+```{r,15}
+####(a)
+CL.fits <- alpha %o% beta; round(CL.fits, 2)
+BF.fits <- M %o% beta; round(BF.fits, 2)
+future <-  row(CL.fits) + col(CL.fits) - 1>TT ## see code preceding Q2
+CL.reserve <-  sum(CL.fits[future]); CL.reserve
+BF.reserve <-  sum(BF.fits[future]); BF.reserve
+####(b)
+CL.retro <- sum(CL.fits[future-1])
+print('-----CL.retro-----')
+CL.retro
+BF.retro <- sum(BF.fits[future-1])
+print('-----BF.retro-----')
+BF.retro
+####(c)
+print('------XIJ SUM------')
+sum(Xij)
+```
+
+
+
